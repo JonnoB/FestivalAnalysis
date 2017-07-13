@@ -18,7 +18,7 @@ lapply(packages, library, character.only = TRUE)
 #used for doing operation in the corpus
 PatternReplace <- content_transformer(function(x, pattern, replacement) gsub(pattern, replacement, x))
 
-setwd("/home/jonno/NottingHill")
+setwd("/home/jonno/FestivalAnalysis")
 
 ```
 
@@ -116,100 +116,30 @@ http://www.iwcp.co.uk/news/news/police-praise-bestival-despite-rise-in-some-crim
 
 ```{r}
 
-source<-LexisNexisSource("/home/jonno/NottingHill/NottingHill UK_National_Newspapers2017-07-13_12-35.HTML", encoding = "UTF-8")
-corpus <- Corpus(source, readerControl = list(language = NA))
-inspect(corpus[[1]])
-
-Papernames<- sapply(1:length(corpus),function(n) meta(corpus[[n]])$origin)
-
-Papernames <- Papernames %>% tolower %>%
-# gsub("\\(london\\)|\\(england\\)|\\(united kingdom\\)", "",.) %>%
-     gsub("sunday", "", .) %>% 
-     gsub(".*sun.*", "sun", .) %>%
-  gsub(".*express.*", "express", .) %>%
-     gsub(".*independent.*", "independent", .) %>%
-   gsub(".*telegraph.*", "telegraph", .) %>%
-     gsub(".*mirror.*", "mirror", .) %>%  
-     gsub(".*times.*", "times", .) %>%
-     gsub(".*mail.*", "mail", .) %>%
-   gsub(".*observer.*", "guardian", .) %>%
-    str_trim
-
-
-for (i in 1:length(corpus)) {
-   meta(corpus[[i]])$origin <- Papernames[i]
-}
-
-corpus <- corpus %>%
-          tm_map(., content_transformer(tolower)) %>%
-     tm_map( PatternReplace, "[[:punct:]]", "") %>%
-     tm_map( PatternReplace, "carnival", " carnival ") %>%   
-     tm_map( PatternReplace, "notting hill", "nottinghill") %>%
-     tm_map( removeWords, stopwords("english")) %>%
-     tm_map(stripWhitespace)  
-
-
-
-#keep only articles that mention the carnival more than once, as others are probably just mentioning it in passing
-dtm <- DocumentTermMatrix(corpus)
-keep <- dtm %>% #[, grepl("carnival$", dtm$dimnames$Terms)] %>% 
-  tidy 
-  
-Docnames <- data_frame(document=(unique(keep$document)))
-
-keep<-  keep %>% filter(grepl("carnival$", term)) %>% left_join(Docnames,., by = "document") %>%
-mutate(keep = count>1)  %>%
-  arrange(match(document,Docnames$document))
-
-keep<-  keep %>% filter(grepl("carnival$", term))%>%
-  mutate(keep = count>1)
-
-
-#after this sentiment analysis can be done
-corpus3 <- corpus 
-
-#words cleaned and with the paper name
-CleanWords <-corpus3 %>% DocumentTermMatrix %>% tidy %>%
-  filter(document %in% keep$document) %>%
-  left_join(., tidy(corpus3) %>% 
-              select(id, origin), by= c("document" = "id")) %>%
-  rename(Paper = origin)
-
-#sentiment attached to the words
-SentiWords <- CleanWords %>%
-        right_join(get_sentiments("nrc"), by=c("term"="word")) %>%
-  filter(!is.na(sentiment)) 
-
-#sentmiment by paper
-NHCSentPaper<- SentiWords%>%
-  group_by(Paper, sentiment) %>%
-  summarise(count = sum(count, na.rm = T)) %>%
-  spread(key = Paper, value = count)
-
-test <-cor(SentPaper[,-1])
-
-#Carnival Sentiment
-NHCsent<- SentiWords%>%
-  group_by(sentiment) %>%
-  summarise(count = sum(count, na.rm = T)) %>%
-  mutate(Festival = "NottingHill")
-
-
-findAssocs(dtm, "nottinghill", 0.5)
-
+NottingHillDATA<-ProcessArticles("Notting Hill")
+WirelessDATA<-ProcessArticles("Wireless")
+BestivalDATA<-ProcessArticles("Bestival")
 ```
 
 #Glasto
 
 ```{r}
-source<-
-c(LexisNexisSource("/home/jonno/NottingHill/Glastonbury 1-500 UK_National_Newspapers2017-07-13_15-31.HTML", encoding = "UTF-8"),
-  LexisNexisSource("/home/jonno/NottingHill/Glastonbury 500-end UK_National_Newspapers2017-07-13_16-07.HTML", encoding = "UTF-8"),
-  recursive=T)
+
+corpus<- list.files(pattern = "Glastonbury") %>% map(~LexisNexisSource(.x, encoding = "UTF-8") %>%
+                                                        Corpus(., readerControl = list(language = NA))
+                                                      ) %>%
+  do.call(function(...) c(..., recursive = FALSE), .)
+
+source21 <-source2[[1]]
+source22 <-source2[[2]]
+z=c(source21,source22, recursive = T)
+
+corpus <- Corpus(source2[[2]], readerControl = list(language = NA))
+
+test <- do.call(function(...) c(..., recursive = TRUE), source)
 
 
-corpus <- Corpus(source, readerControl = list(language = NA))
-inspect(corpus[[1]])
+inspect(source2[[1]])
 
 Papernames<- sapply(1:length(corpus),function(n) meta(corpus[[n]])$origin)
 
@@ -288,28 +218,10 @@ Glastosent<- SentiWords%>%
   summarise(count = sum(count, na.rm = T)) %>%
   mutate(Festival = "Glastonbury")
 
+test <- ProcessArticles("Glastonbury")
 
 findAssocs(dtm, "glastonbury", 0.5)
 ```
-
-
-#Wireless
-
-```{r}
-
-WirelessDATA<-ProcessArticles("Wireless")
-
-
-```
-
-
-#Bestival
-
-```{r}
-BestivalDATA<-ProcessArticles("Bestival")
-
-```
-
 
 
 
@@ -346,8 +258,11 @@ ProcessArticles<- function(FestivalName){
   festlower <- tolower(FestivalName)
   festspaceless <- gsub(" ", "",festlower)
   
-  source<- LexisNexisSource(list.files(pattern = FestivalName), encoding = "UTF-8")
-
+  #Loads all files with the festival name into a list
+  source<- list.files(pattern = FestivalName) %>% map(~LexisNexisSource(.x, encoding = "UTF-8"))
+ 
+  #collapses the list of corpora into a single corpus
+  source <- do.call(function(...) c(..., recursive = TRUE), source)
 
 corpus <- Corpus(source, readerControl = list(language = NA))
 
