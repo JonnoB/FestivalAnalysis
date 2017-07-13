@@ -1,0 +1,437 @@
+---
+title: "Untitled"
+author: "Jonathan Bourne"
+date: "13 July 2017"
+output: html_document
+---
+
+
+```{r}
+
+packages<- c("tidyverse", "rvest", "tm.plugin.lexisnexis", "tidytext", "stringr", "tm")
+
+new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+
+lapply(packages, library, character.only = TRUE)
+#used for doing operation in the corpus
+PatternReplace <- content_transformer(function(x, pattern, replacement) gsub(pattern, replacement, x))
+
+setwd("/home/jonno/NottingHill")
+
+```
+
+
+```{r}
+
+
+FestivalData <-data_frame(Festival = c("Notting Hill", "Glastonbury", "FSTVL", "Lovebox", "Wireless", "SW4", "T in the Park", "Reading", "Bestival", "Leeds"),
+           Capacity = c(1e6, 1e5, 1.5e4, 5e4, 5e4, 2e4, 7e4, 9e4,8e4, 8e4 ),
+           Days = c(2,5,3,2,3,2, 3, 3, 4, 3)) %>%
+  mutate(PersonDays =  Capacity*Days) %>% 
+  arrange(Festival)
+
+```
+
+#Sources
+
+##Glasto
+https://www.whatdotheyknow.com/request/crime_statistics_from_glastonbur
+22-26 June
+1449 articles
+
+
+##Notting Hill
+https://www.whatdotheyknow.com/request/notting_hill_carnival_crime
+
+435 articles about 260 unique
+
+##FSTVL lovebox wireless sw4
+https://beta.met.police.uk/globalassets/foi-media/disclosure_2017/april_2017/information-rights-unit--quantities-of-crimes-recorded-against-under-each-category-of-victim-based-crime-other-crimes-against-society-and-fraud-offences
+FSTVL 28-29 may
+Wireless 8-10 jul
+
+
+##T in the park
+https://www.whatdotheyknow.com/request/388712/response/948315/attach/3/2011%202016%20Crime%20Stats.pdf
+
+#Reading
+This data source is not very good they added up the totals incorrectly, however the police claim in an foi they don't have data which is odd becuase the newspaper is quoting them
+http://www.readingchronicle.co.uk/news/14720956.Reading_Festival_2016__Crime_rate_down_20_per_cent_on_last_year__new_figures_show/
+
+
+##Bestival
+NOt that gret a data source
+http://www.iwcp.co.uk/news/news/police-praise-bestival-despite-rise-in-some-crimes-96145.aspx
+8-11 September
+
+
+```{r}
+
+ CrimeBreakdown=  data_frame('Notting Hill'= c(105,264,170,27,33,41,95), 
+                             "Glastonbury" = c(16,154,32,2,0,1,0),
+                             "FSTVL" = c(0,51,9,1,5,0,1),
+                             "Lovebox" = c(9,33,19,2,0,0,0),
+                             "Wireless" = c(14,38,9,3,3,0,0),
+                             "SW4" = c(6,50,14,1,2,0,0),
+                             "T in the Park" = c(29,95,381,3,1,1,20),
+                             "Reading" = c(0,104,30,2,6,0,0),
+                             "Bestival" = c(13,146,30,1,0,0,12),
+                             "Leeds" = c(12,129, 38,1,3,2,13),
+                            Type = c("Violent", "Theft", "Drugs", "Sex", "Robbery", "Weapons", "Other")) %>%
+  gather(key = Festival, Crimes,-Type) %>%
+  spread(key = Type, value = Crimes) %>%
+  mutate(Total = rowSums(.[-1]),
+         Exp = rowSums(.[-c(1,2,8)]))%>% 
+  arrange(Festival)
+
+ CrimeBreakdownRate <- FestivalData %>% select(Festival, PersonDays) %>%
+  left_join(CrimeBreakdown, by = "Festival") %>% 
+  mutate_if(is.numeric, funs(FestivalData$PersonDays/.)) %>%
+    mutate_if(is.numeric, funs(1/.)) %>%
+   select(-PersonDays)
+
+ CrimeBreakdownPP <-  CrimeBreakdownRate%>%
+ mutate_if(.,is.numeric, funs(1/.)) 
+
+```
+
+#Ranking Festivals
+```{r}
+
+ CrimeBreakdownPP %>% mutate_if(is.numeric, funs(rank(-.))) %>%
+  mutate(AverageRank = rowMeans(.[-1]),
+         RankAvgRank = rank(AverageRank),
+         AverageRank = round(AverageRank))
+
+```
+
+
+
+
+#getting lexis nexis
+
+##Nottinghill
+
+```{r}
+
+source<-LexisNexisSource("/home/jonno/NottingHill/NottingHill UK_National_Newspapers2017-07-13_12-35.HTML", encoding = "UTF-8")
+corpus <- Corpus(source, readerControl = list(language = NA))
+inspect(corpus[[1]])
+
+Papernames<- sapply(1:length(corpus),function(n) meta(corpus[[n]])$origin)
+
+Papernames <- Papernames %>% tolower %>%
+# gsub("\\(london\\)|\\(england\\)|\\(united kingdom\\)", "",.) %>%
+     gsub("sunday", "", .) %>% 
+     gsub(".*sun.*", "sun", .) %>%
+  gsub(".*express.*", "express", .) %>%
+     gsub(".*independent.*", "independent", .) %>%
+   gsub(".*telegraph.*", "telegraph", .) %>%
+     gsub(".*mirror.*", "mirror", .) %>%  
+     gsub(".*times.*", "times", .) %>%
+     gsub(".*mail.*", "mail", .) %>%
+   gsub(".*observer.*", "guardian", .) %>%
+    str_trim
+
+
+for (i in 1:length(corpus)) {
+   meta(corpus[[i]])$origin <- Papernames[i]
+}
+
+corpus <- corpus %>%
+          tm_map(., content_transformer(tolower)) %>%
+     tm_map( PatternReplace, "[[:punct:]]", "") %>%
+     tm_map( PatternReplace, "carnival", " carnival ") %>%   
+     tm_map( PatternReplace, "notting hill", "nottinghill") %>%
+     tm_map( removeWords, stopwords("english")) %>%
+     tm_map(stripWhitespace)  
+
+
+
+#keep only articles that mention the carnival more than once, as others are probably just mentioning it in passing
+dtm <- DocumentTermMatrix(corpus)
+keep <- dtm %>% #[, grepl("carnival$", dtm$dimnames$Terms)] %>% 
+  tidy 
+  
+Docnames <- data_frame(document=(unique(keep$document)))
+
+keep<-  keep %>% filter(grepl("carnival$", term)) %>% left_join(Docnames,., by = "document") %>%
+mutate(keep = count>1)  %>%
+  arrange(match(document,Docnames$document))
+
+keep<-  keep %>% filter(grepl("carnival$", term))%>%
+  mutate(keep = count>1)
+
+
+#after this sentiment analysis can be done
+corpus3 <- corpus 
+
+#words cleaned and with the paper name
+CleanWords <-corpus3 %>% DocumentTermMatrix %>% tidy %>%
+  filter(document %in% keep$document) %>%
+  left_join(., tidy(corpus3) %>% 
+              select(id, origin), by= c("document" = "id")) %>%
+  rename(Paper = origin)
+
+#sentiment attached to the words
+SentiWords <- CleanWords %>%
+        right_join(get_sentiments("nrc"), by=c("term"="word")) %>%
+  filter(!is.na(sentiment)) 
+
+#sentmiment by paper
+NHCSentPaper<- SentiWords%>%
+  group_by(Paper, sentiment) %>%
+  summarise(count = sum(count, na.rm = T)) %>%
+  spread(key = Paper, value = count)
+
+test <-cor(SentPaper[,-1])
+
+#Carnival Sentiment
+NHCsent<- SentiWords%>%
+  group_by(sentiment) %>%
+  summarise(count = sum(count, na.rm = T)) %>%
+  mutate(Festival = "NottingHill")
+
+
+findAssocs(dtm, "nottinghill", 0.5)
+
+```
+
+#Glasto
+
+```{r}
+source<-
+c(LexisNexisSource("/home/jonno/NottingHill/Glastonbury 1-500 UK_National_Newspapers2017-07-13_15-31.HTML", encoding = "UTF-8"),
+  LexisNexisSource("/home/jonno/NottingHill/Glastonbury 500-end UK_National_Newspapers2017-07-13_16-07.HTML", encoding = "UTF-8"),
+  recursive=T)
+
+
+corpus <- Corpus(source, readerControl = list(language = NA))
+inspect(corpus[[1]])
+
+Papernames<- sapply(1:length(corpus),function(n) meta(corpus[[n]])$origin)
+
+Papernames <- Papernames %>% tolower %>%
+# gsub("\\(london\\)|\\(england\\)|\\(united kingdom\\)", "",.) %>%
+     gsub("sunday", "", .) %>% 
+     gsub(".*sun.*", "sun", .) %>%
+  gsub(".*express.*", "express", .) %>%
+     gsub(".*independent.*", "independent", .) %>%
+   gsub(".*telegraph.*", "telegraph", .) %>%
+     gsub(".*mirror.*", "mirror", .) %>%  
+     gsub(".*times.*", "times", .) %>%
+     gsub(".*mail.*", "mail", .) %>%
+   gsub(".*observer.*", "guardian", .) %>%
+  gsub(".*guardian.*", "guardian", .)
+    str_trim
+Papernames %>% unique
+
+for (i in 1:length(corpus)) {
+   meta(corpus[[i]])$origin <- Papernames[i]
+}
+
+corpus <- corpus %>%
+          tm_map(., content_transformer(tolower)) %>%
+     tm_map( PatternReplace, "[[:punct:]]", "") %>%
+     tm_map( PatternReplace, "festival", " festival ") %>%   
+     #tm_map( PatternReplace, "glastonbury", "g") %>%
+     tm_map( removeWords, stopwords("english")) %>%
+     tm_map(stripWhitespace)  
+
+
+
+#keep only articles that mention the carnival more than once, as others are probably just mentioning it in passing
+dtm <- DocumentTermMatrix(corpus)
+keep <- dtm %>% #[, grepl("carnival$", dtm$dimnames$Terms)] %>% 
+  tidy 
+  
+Docnames <- data_frame(document=(unique(keep$document)))
+
+keep<-  keep %>% filter(grepl("glastonbury$", term)) %>% left_join(Docnames,., by = "document") %>%
+mutate(keep = count>1)  %>%
+  arrange(match(document,Docnames$document))
+
+keep<-  keep %>% filter(grepl("glastonbury$", term))%>%
+  mutate(keep = count>1)
+
+
+#after this sentiment analysis can be done
+corpus3 <- corpus 
+
+#words cleaned and with the paper name
+CleanWords <-corpus3 %>% DocumentTermMatrix %>% tidy %>%
+  filter(document %in% keep$document) %>%
+  left_join(., tidy(corpus3) %>% 
+              select(id, origin), by= c("document" = "id")) %>%
+  rename(Paper = origin)
+
+#sentiment attached to the words
+SentiWords <- CleanWords %>%
+        right_join(get_sentiments("nrc"), by=c("term"="word")) %>%
+  filter(complete.cases(.)) 
+
+#sentmiment by paper
+GlastoSentPaper<- SentiWords%>%
+  group_by(Paper, sentiment) %>%
+  summarise(count = sum(count, na.rm = T)) %>%
+  spread(key = Paper, value = count)
+GlastoSentPaper[is.na(GlastoSentPaper)] <-0
+
+
+test <-cor(GlastoSentPaper[,-1])
+
+#Carnival Sentiment
+Glastosent<- SentiWords%>%
+  group_by(sentiment) %>%
+  summarise(count = sum(count, na.rm = T)) %>%
+  mutate(Festival = "Glastonbury")
+
+
+findAssocs(dtm, "glastonbury", 0.5)
+```
+
+
+#Wireless
+
+```{r}
+
+WirelessDATA<-ProcessArticles("Wireless")
+
+
+```
+
+
+#Bestival
+
+```{r}
+BestivalDATA<-ProcessArticles("Bestival")
+
+```
+
+
+
+
+```{r}
+Comparefest <- ls(pattern=(".sent")) %>%
+  map_df(~eval(parse(text =.x))) %>%
+  spread(key = Festival, value = count) 
+
+PercentFest <- Comparefest  %>% 
+  mutate_if(is.numeric, funs(./sum(.))) 
+
+RelativetoGlasto <- PercentFest%>%
+  mutate_if(is.numeric, funs(./PercentFest$Glastonbury))
+
+cor(PercentFest[,-1])
+
+
+theta <- function(a,b){
+  acos( sum(a*b) / ( sqrt(sum(a * a)) * sqrt(sum(b * b)) ) )
+  }
+
+theta(PercentFest$Glastonbury, PercentFest$NottingHill)
+theta(PercentFest$Glastonbury, PercentFest$Wireless)
+theta(PercentFest$NottingHill, PercentFest$Wireless)
+
+```
+
+
+
+
+```{r}
+ProcessArticles<- function(FestivalName){
+  
+  festlower <- tolower(FestivalName)
+  festspaceless <- gsub(" ", "",festlower)
+  
+  source<- LexisNexisSource(list.files(pattern = FestivalName), encoding = "UTF-8")
+
+
+corpus <- Corpus(source, readerControl = list(language = NA))
+
+
+Papernames<- sapply(1:length(corpus),function(n) meta(corpus[[n]])$origin)
+
+Papernames <- Papernames %>% tolower %>%
+# gsub("\\(london\\)|\\(england\\)|\\(united kingdom\\)", "",.) %>%
+     gsub("sunday", "", .) %>% 
+     gsub(".*sun.*", "sun", .) %>%
+  gsub(".*express.*", "express", .) %>%
+     gsub(".*independent.*", "independent", .) %>%
+   gsub(".*telegraph.*", "telegraph", .) %>%
+     gsub(".*mirror.*", "mirror", .) %>%  
+     gsub(".*times.*", "times", .) %>%
+     gsub(".*mail.*", "mail", .) %>%
+   gsub(".*observer.*", "guardian", .) %>%
+  gsub(".*guardian.*", "guardian", .)
+    str_trim
+Papernames %>% unique
+
+for (i in 1:length(corpus)) {
+   meta(corpus[[i]])$origin <- Papernames[i]
+}
+
+corpus <- corpus %>%
+          tm_map(., content_transformer(tolower)) %>%
+     tm_map( PatternReplace, "[[:punct:]]", "") %>%
+     tm_map( PatternReplace, "festival", " festival ") %>%   
+     tm_map( PatternReplace, "carnival", " carnival ") %>%   
+     tm_map( PatternReplace, festlower, festspaceless) %>%
+     tm_map( removeWords, stopwords("english")) %>%
+     tm_map(stripWhitespace)  
+
+
+
+#keep only articles that mention the carnival more than once, as others are probably just mentioning it in passing
+dtm <- DocumentTermMatrix(corpus)
+keep <- dtm %>% #[, grepl("carnival$", dtm$dimnames$Terms)] %>% 
+  tidy 
+  
+Docnames <- data_frame(document=(unique(keep$document)))
+
+keep<-  keep %>% filter(grepl(paste0(festspaceless,"$"), term)) %>% left_join(Docnames,., by = "document") %>%
+mutate(keep = count>1)  %>%
+  arrange(match(document,Docnames$document))
+
+keep<-  keep %>% filter(grepl(paste0(festspaceless,"$"), term))%>%
+  mutate(keep = count>1)
+
+
+#after this sentiment analysis can be done
+corpus3 <- corpus 
+
+#words cleaned and with the paper name
+CleanWords <-corpus3 %>% DocumentTermMatrix %>% tidy %>%
+  filter(document %in% keep$document) %>%
+  left_join(., tidy(corpus3) %>% 
+              select(id, origin), by= c("document" = "id")) %>%
+  rename(Paper = origin)
+
+#sentiment attached to the words
+SentiWords <- CleanWords %>%
+        right_join(get_sentiments("nrc"), by=c("term"="word")) %>%
+  filter(complete.cases(.)) 
+
+#sentmiment by paper
+SentimentbyPaper<- SentiWords%>%
+  group_by(Paper, sentiment) %>%
+  summarise(count = sum(count, na.rm = T)) %>%
+  spread(key = Paper, value = count)
+SentimentbyPaper[is.na(SentimentbyPaper)] <-0
+
+
+#Carnival Sentiment
+FestivalSentiment<- SentiWords%>%
+  group_by(sentiment) %>%
+  summarise(count = sum(count, na.rm = T)) %>%
+  mutate(Festival = FestivalName)
+
+out <- list(SentimentbyPaper, FestivalSentiment) %>% 
+  setNames(c("SentimentbyPaper", "FestivalSentiment"))
+
+
+}
+```
+
