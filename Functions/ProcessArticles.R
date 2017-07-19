@@ -1,4 +1,4 @@
-ProcessArticles<- function(FestivalName){
+ProcessArticles<- function(FestivalName, sents = NULL){
   #This function loads and processes the corpus from nexislexis before outputting the analysed results
   
   
@@ -70,10 +70,22 @@ ProcessArticles<- function(FestivalName){
                 select(id, origin), by= c("document" = "id")) %>%
     rename(Paper = origin)
   
+  TotalWords <-sum(CleanWords$count, na.rm = T) 
+  
+  
+  if(is.null(sents)){
+    sents <- get_sentiments("nrc")
+  }
+  
   #sentiment attached to the words
   SentiWords <- CleanWords %>%
-    right_join(get_sentiments("nrc"), by=c("term"="word")) %>%
+    right_join(sents, by=c("term"="word")) %>%
     filter(complete.cases(.)) 
+  
+  TopWords <- SentiWords %>% group_by(term) %>%
+    summarise(counts = sum(count)) %>%
+    arrange(desc(counts))# %>%
+    #slice(1:20)
   
   #sentmiment by paper
   SentimentbyPaper<- SentiWords%>%
@@ -89,8 +101,8 @@ ProcessArticles<- function(FestivalName){
     summarise(count = sum(count, na.rm = T)) %>%
     mutate(Festival = FestivalName)
   
-  out <- list(SentimentbyPaper, FestivalSentiment) %>% 
-    setNames(c("SentimentbyPaper", "FestivalSentiment"))
+  out <- list(SentiWords, SentimentbyPaper, FestivalSentiment, TotalWords, TopWords) %>% 
+    setNames(c("SentiWords","SentimentbyPaper", "FestivalSentiment", "TotalWords", "TopWords"))
   
   
 }

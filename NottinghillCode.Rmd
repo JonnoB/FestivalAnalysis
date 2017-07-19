@@ -8,7 +8,7 @@ output: html_document
 
 ```{r}
 
-packages<- c("tidyverse", "rvest", "tm.plugin.lexisnexis", "tidytext", "stringr", "tm", "ggfortify")
+packages<- c("tidyverse", "rvest", "tm.plugin.lexisnexis", "tidytext", "stringr", "tm", "ggfortify", "Rtsne", "xtable", "htmlTable")
 
 new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
@@ -25,17 +25,116 @@ list.files() %>% sapply(.,source)
 
 ```
 
+cost
+http://www.money.co.uk/guides/how-much-do-festivals-cost-and-what-should-you-take.htm
 
 ```{r}
 
 
-FestivalData <-data_frame(Festival = c("Notting Hill", "Glastonbury", "FSTVL", "Lovebox", "Wireless", "SW4", "T in the Park", "Reading", "Bestival", "Leeds"),
-           Capacity = c(1e6, 1e5, 1.5e4, 5e4, 5e4, 2e4, 7e4, 9e4,8e4, 8e4 ),
-           Days = c(2,5,3,2,3,2, 3, 3, 4, 3)) %>%
+FestivalData <-data_frame(Festival = c("Notting Hill", "Glastonbury", "FSTVL", "Lovebox", "Wireless", "SW4", "T in the park", "Reading.Festival", "Bestival", "Leeds", "London August 16"),
+           Capacity = c(1e6, 1.35e5, 1.5e4, 5e4, 5e4, 2e4, 7e4, 9e4,8e4, 8e4, 8.8e6),
+           Days = c(2,5,3,2,3,2, 4, 3, 4, 3, 31)) %>%
   mutate(PersonDays =  Capacity*Days) %>% 
-  arrange(Festival)
+  arrange(Capacity)
+
+
+FestivalData %>%
+  htmlTable(.,
+            caption ="Click on headings to rearrange according to size")
 
 ```
+
+#London Crime
+  nature of crime
+
+http://www.britishbids.info/wp-content/uploads/Policing-the-Night-Time-Economy.pdf
+#crime stats
+  https://www.ons.gov.uk/peoplepopulationandcommunity/crimeandjustice/bulletins/crimeinenglandandwales/yearendingdec2016
+
+https://data.london.gov.uk/dataset/the-number-of-public-houses-and-bars-in-london-2001-2016/resource/7fa8d10c-e2bd-49e2-8db3-5ac2659c502b
+
+liscened premises
+https://www.gov.uk/government/statistics/entertainment-licensing-2014
+
+
+This is challenging to do 
+
+The nature of crime tables show that 47% of violent crime occurs at the weekend
+62% of violent crime occurs in the evening
+11% occur in pubs and clubs
+80% of weekend arrests are alchohol related -The Institute of Alcohol Studies 
+25% of all crime occurs at night
+70% of weekend violent incidents involved alchohol
+
+
+
+```{r}
+setwd("/home/jonno/FestivalAnalysis")
+
+
+
+LondonPop<-8.8e6
+Alldays <- 30
+ViolentCrime <- 16.6e3
+WeekendDays <- 9
+
+
+#make a reclassing table to formatt the classes like I have for the festivals
+Reclassing <- "Anti-social behaviour,Burglary,Criminal damage and arson,Other theft,Public order,Vehicle crime,Violence and sexual offences,Drugs,Robbery,Shoplifting,Theft from the person,Other crime,Possession of weapons,Bicycle theft" %>% str_split(.,pattern=",") %>%
+  unlist %>%
+  data_frame(OldClass = .,
+NewClass = c("Other", "Theft", "Other", "Theft", "Other", "Other", "Violent and Sexual", "Drugs", "Robbery", "Theft", "Theft", "Other", "Weapons", "Theft"))
+
+
+LondonCrime7 <-read_csv("2016-07-metropolitan-street.csv")  %>%
+  mutate(`Crime type`=Reclassing$NewClass[match(.$`Crime type`, Reclassing$OldClass)]) %>%
+  group_by(`Crime type`) %>%
+  summarise(counts = n()) %>% 
+  mutate(Rate = (counts/(LondonPop*Alldays))*1e6)
+
+#Crime was lower in August so let's use that instead of june
+
+LondonCrime8 <-read_csv("2016-08-metropolitan-street.csv")  %>%
+  mutate(`Crime type`=Reclassing$NewClass[match(.$`Crime type`, Reclassing$OldClass)]) %>%
+  group_by(`Crime type`) %>%
+  summarise(counts = n()) %>%
+  mutate(Festival = "London August 16") %>%
+  spread(key= `Crime type`, value = counts)
+
+# %>% 
+#   bind_rows(.,data_frame(`Crime type`= "Total", counts =sum(.$counts))) %>%
+#   mutate(London = (counts/(LondonPop*Alldays))*1e6) %>%
+#   mutate(NottingHill = (c(170,95,33,264,132,41,735)/(1e6*2))*1e6)
+
+
+#slightly lower than August
+
+LondonCrime9 <-read_csv("2016-09-metropolitan-street.csv")  %>%
+  mutate(`Crime type`=Reclassing$NewClass[match(.$`Crime type`, Reclassing$OldClass)]) %>%
+  group_by(`Crime type`) %>%
+  summarise(counts = n()) %>% 
+  mutate(Rate = (counts/(LondonPop*Alldays))*1e6)
+
+NHCVS <- (132/(1e6*2))*1e6
+
+LondonVSNHC <- c((ViolentCrime/(LondonPop*Alldays))*1e6,
+
+(ViolentCrime*.47/(LondonPop*WeekendDays))*1e6,
+
+(ViolentCrime*.47*0.7/(LondonPop*WeekendDays))*1e6,
+
+NHCVS) %>% round %>% 
+  data_frame(Type = c("London", "London at weekends", "London wknds alchohol", "Notting Hill"), `Crime Rate` = .) %>%
+  mutate(`Percent Difference` = signif(`Crime Rate`/NHCVS,3)*100-100)
+
+
+
+ CrimeBreakdown %>% mutate(`Violent and Sexual` = Sex + Violent)
+
+
+```
+
+
 
 #Sources
 
@@ -80,26 +179,64 @@ http://www.iwcp.co.uk/news/news/police-praise-bestival-despite-rise-in-some-crim
                              "Lovebox" = c(9,33,19,2,0,0,0),
                              "Wireless" = c(14,38,9,3,3,0,0),
                              "SW4" = c(6,50,14,1,2,0,0),
-                             "T in the Park" = c(29,95,381,3,1,1,20),
-                             "Reading" = c(0,104,30,2,6,0,0),
+                             "T in the park" = c(29,95,381,3,1,1,20),
+                             "Reading.Festival" = c(0,104,30,2,6,0,0),
                              "Bestival" = c(13,146,30,1,0,0,12),
                              "Leeds" = c(12,129, 38,1,3,2,13),
                             Type = c("Violent", "Theft", "Drugs", "Sex", "Robbery", "Weapons", "Other")) %>%
   gather(key = Festival, Crimes,-Type) %>%
   spread(key = Type, value = Crimes) %>%
+  mutate(`Violent and Sexual` = Sex + Violent) %>%
+  select(-Sex, -Violent) %>%
+  bind_rows(., LondonCrime8) %>%
   mutate(Total = rowSums(.[-1]),
-         Exp = rowSums(.[-c(1,2,8)]))%>% 
-  arrange(Festival)
+         Exp = rowSums(.[-c(1,2,6)]))%>% 
+  arrange(Festival) %>%
+     setNames(make.names(names(.)))
+
 
  CrimeBreakdownRate <- FestivalData %>% select(Festival, PersonDays) %>%
   left_join(CrimeBreakdown, by = "Festival") %>% 
   mutate_if(is.numeric, funs(FestivalData$PersonDays/.)) %>%
     mutate_if(is.numeric, funs(1/.)) %>%
-   select(-PersonDays)
+   select(-PersonDays) 
+
+ #rate per 1e6
+test <- FestivalData %>% select(Festival, PersonDays) %>%
+  left_join(CrimeBreakdown, by = "Festival") %>% 
+  mutate_if(is.numeric, funs(FestivalData$PersonDays/.)) %>%
+    mutate_if(is.numeric, funs(round((1/.)*1e6))) %>%
+   select(-PersonDays) 
+
+
+CrimeBreakdownRate %>%  
+  mutate_if(.,is.numeric, funs(round(.*1e6))) %>%
+  arrange(Total) %>%
+ htmlTable(.,
+           caption = "This table show the number of crimes per million. Column on far right excludes Drugs and weapons possesion")
 
  CrimeBreakdownPP <-  CrimeBreakdownRate%>%
- mutate_if(.,is.numeric, funs(1/.)) 
+ mutate_if(.,is.numeric, funs((1/.))) 
 
+ 
+ 
+RatePCA <- CrimeBreakdownRate[,c(3:5,7)] %>%
+  prcomp()
+# 
+# RatePCA <- CrimeBreakdownRate%>%
+#   mutate(seperator = ifelse(Festival == "Notting Hill", 1,0)) %>%
+#   .[,c(2:6,11)] %>%
+#   prcomp()
+summary(RatePCA) #first two componants capture 99.7 percent of variance
+
+autoplot(RatePCA, data = CrimeBreakdownRate, colour = "Festival", loadings = TRUE, loadings.label = TRUE) 
+ 
+
+RatePCA <- prcomp(CrimeBreakdownRate[,3:5])
+summary(RatePCA) #first two componants capture 99.7 percent of variance
+
+autoplot(RatePCA, data = CrimeBreakdownRate, colour = "Festival", loadings = TRUE, loadings.label = TRUE) +
+  ggtitle("")
 ```
 
 #Ranking Festivals
@@ -112,6 +249,9 @@ http://www.iwcp.co.uk/news/news/police-praise-bestival-despite-rise-in-some-crim
 
 ```
 
+
+
+
 #getting lexis nexis
 
 ##Nottinghill
@@ -122,9 +262,10 @@ GlastonburyDATA <- ProcessArticles("Glastonbury")
 NottingHillDATA <- ProcessArticles("Notting Hill")
 WirelessDATA <- ProcessArticles("Wireless")
 BestivalDATA <- ProcessArticles("Bestival")
-ReadingDATA <- ProcessArticles("Reading")
+ReadingDATA <- ProcessArticles("Reading Festival")
 LeedsDATA <- ProcessArticles("Leeds")
 TparkDATA <- ProcessArticles("T in the park")
+#RioDATA <- ProcessArticles("Rio") #RIo is dominated by ZIKA coverage which was high at the time.
 ```
 
 
@@ -135,34 +276,295 @@ Comparefest <- ls(pattern=("DATA")) %>%
 
 PercentFest <- Comparefest  %>% setNames(make.names(names(.))) %>%
   mutate(type = ifelse(sentiment=="positive"| sentiment == "negative", "direction", "emotions")) %>%
-  group_by(type) %>%
+ group_by(type) %>%
   mutate_if(is.numeric, funs(./sum(.)))%>% 
   arrange(type)  %>% ungroup
 
-#not very interesting
-autoplot(prcomp(PercentFest[,-c(1,9)]), data = PercentFest, colour = "type") 
-
 PercentFest2 <- PercentFest %>% 
-  filter(type!="direction") %>%
-  filter(sentiment!="trust") %>%
   select(-type) %>%
   gather(key = "Festival", value = "value",-sentiment) %>%
   spread(key=sentiment, value = value)
 
-autoplot(prcomp(PercentFest2[,-c(1)]), data = PercentFest2, colour = "Festival", loadings = TRUE, loadings.label = TRUE) 
+summary(prcomp(PercentFest2[,-c(1)]))
+
+autoplot(prcomp(PercentFest2[,-c(1)]), data = PercentFest2, colour = "Festival", loadings = TRUE, loadings.label = TRUE) +
+  ggtitle("2-D projection for the emotional content of media coverage of UK Festivals")
+ggsave("MediaPreTreat.png")
+
+PercentFest2 %>% 
+  left_join(.,CrimeBreakdownPP %>% mutate(Festival = make.names(Festival))) %>%
+  ggplot(., aes(y= fear, x = Total)) +geom_point()
 
 RelativetoGlasto <- PercentFest%>%
-  mutate_if(is.numeric, funs(./PercentFest$Glastonbury))
+  mutate_if(is.numeric, funs(./rowMeans(PercentFest[,-c(1,9)])))
+
+
+RelativetoGlasto %>%
+  mutate_if(is.numeric, funs(round(.*100)-100)) %>%
+  select(-type) %>%
+  htmlTable(.,
+            caption = "This table shows the emotional coverage of each festival relative to average. Scores above 0 mean more than average")
+
+```
+
+Interpret the emotional content
+```{r}
+
+TopWordsForEmotions <- unique(NottingHillDATA$SentiWords$sentiment) %>% map(~TopEmotions(.x))
+names(TopWordsForEmotions) <- unique(NottingHillDATA$SentiWords$sentiment)
+
+allemotions <- "white black opera john boy khan lord wireless festival carnival parade vote leave resign resignation government resigned holiday reading" %>% str_split(pattern =  " ") %>% unlist
+
+fear <- "watch mum destination advance volunteer journey confidence government change feeling parade youth giant bear god belt lace khan" %>% str_split(pattern = " ")%>% unlist
+
+trust <- "smith police bank iron hospital officer" %>% str_split(pattern = " ")%>% unlist
+
+disgust <- "glitter tree celebrity winning lush treat octopus" %>% str_split(pattern = " ")%>% unlist
+
+anger <- "hot musical orchestra harry celebrity"  %>% str_split(pattern = " ")%>% unlist
+
+positive <- "police officer director" %>% str_split(pattern = " ")%>% unlist
+sadness <- "musical art mother music" %>% str_split(pattern = " ")%>% unlist
+negative <- "pop mum mother parade" %>% str_split(pattern = " ")%>% unlist
+
+sentstreat<- get_sentiments("nrc") %>% 
+  mutate(joint = paste0(word, sentiment)) %>%
+  filter(!(word) %in% allemotions) %>%
+  filter(!(joint) %in% paste0(fear, "fear")) %>%
+  filter(!(joint) %in% paste0(trust, "trust")) %>%
+  filter(!(joint) %in% paste0(disgust, "disgust")) %>%
+  filter(!(joint) %in% paste0(anger, "anger")) %>%
+  filter(!(joint) %in% paste0(positive, "positive")) %>%
+  filter(!(joint) %in% paste0(sadness, "sadness")) %>%
+  filter(!(joint) %in% paste0(negative, "negative")) %>%
+  select(-joint)
+
+test <- get_sentiments("nrc") %>% 
+     filter((word %in% c("festival", "carnival", "boy", "holiday",  "parade")) )
+
+
+```
+
+#Adapted sentiments
+
+```{r}
+setwd("/home/jonno/FestivalAnalysis")
+GlastonburyTREAT <- ProcessArticles("Glastonbury", sentstreat)
+NottingHillTREAT <- ProcessArticles("Notting Hill", sentstreat)
+WirelessTREAT <- ProcessArticles("Wireless", sentstreat)
+BestivalTREAT <- ProcessArticles("Bestival", sentstreat)
+ReadingTREAT <- ProcessArticles("Reading Festival", sentstreat)
+LeedsTREAT <- ProcessArticles("Leeds", sentstreat)
+TparkTREAT <- ProcessArticles("T in the park", sentstreat)
+```
+
+
+#total words
+```{r}
+  
+totalwords<-ls(pattern=("TREAT")) %>%
+  map_dbl(~eval(parse(text =paste0(.x,"$TotalWords"))))
+
+totalwords<-  FestivalData %>%
+    filter(!grepl("London|FSTVL|SW4|Lovebox", Festival)) %>%
+    arrange(Festival) %>%
+  mutate(Words = totalwords,
+         WordsperPersondays = round((Words/PersonDays)*1000),
+         WordsperCapacity = round((Words/Capacity)*1000)) %>%
+  select(Festival,Words, WordsperPersondays, WordsperCapacity)
+
+totalwords %>%
+  htmlTable()
+
+ 
+```
 
 
 
-theta <- function(a,b){
-  acos( sum(a*b) / ( sqrt(sum(a * a)) * sqrt(sum(b * b)) ) )
-  }
+#Post treatment analysis
 
-theta(PercentFest$Glastonbury, PercentFest$NottingHill)
-theta(PercentFest$Glastonbury, PercentFest$Wireless)
-theta(PercentFest$NottingHill, PercentFest$Wireless)
+```{r}
+ComparefestTreat <- ls(pattern=("TREAT")) %>%
+  map_df(~eval(parse(text =paste0(.x,"$FestivalSentiment")))) %>%
+  spread(key = Festival, value = count) 
 
+PercentFestTreat <- ComparefestTreat  %>% setNames(make.names(names(.))) %>%
+  mutate(type = ifelse(sentiment=="positive"| sentiment == "negative", "direction", "emotions")) %>%
+ group_by(type) %>%
+  mutate_if(is.numeric, funs(./sum(.)))%>% 
+  arrange(type)  %>% ungroup
+
+PercentFestTreat2 <- PercentFestTreat %>% 
+  select(-type) %>%
+  gather(key = "Festival", value = "value",-sentiment) %>%
+  spread(key=sentiment, value = value)
+
+summary(prcomp(PercentFestTreat2[,-c(1)]))
+
+autoplot(prcomp(PercentFestTreat2[,-c(1)]), data = PercentFestTreat2, colour = "Festival", loadings = TRUE, loadings.label = TRUE) +
+  ggtitle("2-D projection for the emotional content of media coverage of UK Festivals\n after cleaning the sentiments")
+ggsave("MediaPostTreat.png")
+
+RelativetoGlastoTreat <- PercentFestTreat%>%
+  mutate_if(is.numeric, funs(./rowMeans(PercentFestTreat[,-c(1,9)])))
+
+RelativetoGlastoTreat %>%
+  mutate_if(is.numeric, funs(round(.*100)-100)) %>%
+  select(-type) %>%
+  htmlTable(., 
+            caption = "This table shows the emotional coverage of each festival relative to average. Scores above 0 mean more than average")
+
+
+TopWordsForEmotionsTreat <- unique(NottingHillDATA$SentiWords$sentiment) %>% map(~TopEmotions(.x, top = 6, patt = "TREAT")) %>%
+  setNames(unique(NottingHillDATA$SentiWords$sentiment))
+
+
+NottingHillTREAT$TotalWords
+test<- NottingHillTREAT$TopWords
+test<- left_join(NottingHillTREAT$TopWords, sentstreat, by = c("term" = "word"))
+
+
+topwords <- ls(pattern=("TREAT")) %>%
+  map_df(~eval(parse(text =paste0(.x,"$TopWords"))) %>%
+           slice(1:20) %>%
+           mutate(Festival =sub("TREAT", "", .x),
+         number = 1:20)) %>%
+  select(-counts) %>%
+  spread(key=Festival, value = "term")
+
+
+WordsByFestival <- ls(pattern=("TREAT")) %>%
+  map_df(~eval(parse(text =paste0(.x,"$TopWords"))) %>%
+           mutate(Festival =sub("TREAT", "", .x),
+                  rank = 1:n())) %>%
+  select(-counts) %>%
+  spread(key=Festival, value = "term")
+
+wordstomatch <-c("police", "attack", "violence", "hospital")
+WordsByFestival %>% map_df(~match(wordstomatch,.x )) %>%
+  mutate(Word = wordstomatch) %>%
+  select(Word, Bestival:Wireless) %>%
+  htmlTable(.,
+            caption="Word frequency per 1000")
+
+#get word frequency of key negative words
+
+totalwords2 <- totalwords
+totalwords2[c(4:6),1] <- c("NottingHill", "Reading", "Tpark") 
+
+WordsByFestiva2 <- ls(pattern=("TREAT")) %>%
+  map_df(~eval(parse(text =paste0(.x,"$TopWords"))) %>%
+           mutate(Festival =sub("TREAT", "", .x))) %>%
+  left_join(.,totalwords2 %>% select(Festival, Words)) %>%
+  mutate(Frequency = signif((counts/Words)*1000,2)) %>% 
+  group_by(Festival) %>%
+  mutate(EmoFreq = (counts/sum(counts))*1000) %>%
+  filter(term %in% wordstomatch) %>%
+  select(Festival, Frequency, term) %>%
+  spread(key = Festival, value = Frequency) 
+
+WordsByFestiva2[is.na(WordsByFestiva2)] <-0
+
+WordsByFestiva2 %>%
+  htmlTable(.,
+            caption="Word frequency per 1000, click on headings to rearrange")
+
+
+
+
+topwords2 <-topwords %>%
+  slice(1:10) %>%
+  rename(Rank = number) %>%select(-Rank)
+
+#adds padding to stop the tables looping cramped
+spacing<- rbind(rep("background: lightgrey; font-size: 1em; padding-left: .5em; padding-right: .2em;", times=ncol(topwords2)),
+                           matrix("", ncol=ncol(topwords2), nrow=nrow(topwords2)))
+
+topwords2 %>%
+  htmlTable()
+
+
+```
+
+
+
+Horrible models
+```{r}
+errors <- PercentFestTreat2 %>% #ComparePaper2 %>%
+  left_join(.,CrimeBreakdownPP %>% mutate(Festival = make.names(Festival))) 
+
+errors %>%
+  filter(fear != 1) %>%
+#    filter(Festival != "T.in.the.park") %>%
+ggplot(., aes(x= Total, fear)) +geom_point()
+
+errors %>%
+  lm(fear~Total, data = .) %>% summary
+
+errors %>%
+  filter(Festival != "Notting.Hill") %>%
+  lm(fear~Total, data = .) %>% summary
+
+errors %>%
+  filter(Festival != "T.in.the.park") %>%
+  lm(fear~Total, data = .) %>% summary
+
+
+```
+Models show that coverage has no relationship to crime unless you remove Notting Hill then fear reduces as crime reduces, or you remove T in the Park in which case fear increases as crime reduces.
+
+
+#Coverage by newpapers
+
+
+```{r}
+ComparePaper <- ls(pattern=("TREAT")) %>%
+  map_df(~eval(parse(text =paste0(.x,"$SentimentbyPaper"))) %>%
+           gather(key = Paper, value = "value",-sentiment) %>%
+           mutate(Festival = sub("TREAT", "", .x))) 
+
+ComparePaper2<-    ComparePaper%>%
+  mutate(type = ifelse(sentiment=="positive"| sentiment == "negative", "direction", "emotions")) %>%
+      group_by(Paper, Festival, type) %>%
+      mutate(value = value/sum(value)) %>%
+  ungroup %>%
+  select(-type) %>%
+  spread(key = sentiment, value = value) %>%
+  mutate(Nott = ifelse(Festival =="NottingHill","NottingHill", "Other"))
+
+PaperPCA <- ComparePaper2 %>% .[,c(3:12)] %>%
+  prcomp()
+
+summary(PaperPCA) #first two componants capture 99.7 percent of variance
+
+autoplot(PaperPCA, data = ComparePaper2, colour = "Nott", loadings = TRUE, loadings.label = TRUE) 
+ 
+```
+
+
+extract Journo names etc
+```{r}
+
+
+NottDat <- LexisNexisSource("Notting Hill UK_National_Newspapers2017-07-13_12-35.HTML", encoding = "UTF-8") 
+NottDat2 <- NottDat %>%
+  Corpus(., readerControl = list(language = NA))
+
+test <- grep("BYLINE:", NottDat$content)
+
+NottDat$content[test]
+
+meta(NottDat2)
+meta(NottDat2[[1]])
+
+as.data.frame(meta(NottDat2[[1]]))
+
+type<- (meta(NottDat2[[1]])) 
+inspect(NottDat2[[1]])
+
+test <- NottDat2 %>% map_df(~meta(.x))
+
+NottDat2 %>% map_df(~meta(.x, tag = "author") )
+test <- sapply(NottDat2, meta, "author")
 ```
 
