@@ -38,6 +38,8 @@ FestivalData <-data_frame(Festival = c("Notting Hill", "Glastonbury", "FSTVL", "
   arrange(Capacity)
 
 
+write_excel_csv(FestivalData, "FestivalData.xlsx")
+
 FestivalData %>%
   htmlTable(.,
             caption ="Click on headings to rearrange according to size")
@@ -173,7 +175,7 @@ http://www.iwcp.co.uk/news/news/police-praise-bestival-despite-rise-in-some-crim
 
 ```{r}
 
- CrimeBreakdown=  data_frame('Notting Hill'= c(105,264,170,27,33,41,95), 
+ CrimeBreakdown <-  data_frame('Notting Hill'= c(105,264,170,27,33,41,95), 
                              "Glastonbury" = c(16,154,32,2,0,1,0),
                              "FSTVL" = c(0,51,9,1,5,0,1),
                              "Lovebox" = c(9,33,19,2,0,0,0),
@@ -194,6 +196,7 @@ http://www.iwcp.co.uk/news/news/police-praise-bestival-despite-rise-in-some-crim
   arrange(Festival) %>%
      setNames(make.names(names(.)))
 
+write_excel_csv(CrimeBreakdown, "CrimeBreakdown.xlsx")
 
  CrimeBreakdownRate <- FestivalData %>% select(Festival, PersonDays) %>%
   left_join(CrimeBreakdown, by = "Festival") %>% 
@@ -208,6 +211,7 @@ test <- FestivalData %>% select(Festival, PersonDays) %>%
     mutate_if(is.numeric, funs(round((1/.)*1e6))) %>%
    select(-PersonDays) 
 
+write_excel_csv(test, "CrimeBreakdownRate.xlsx")
 
 CrimeBreakdownRate %>%  
   mutate_if(.,is.numeric, funs(round(.*1e6))) %>%
